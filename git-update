@@ -1,0 +1,40 @@
+#!/usr/bin/perl
+#-;-perl-;-
+use strict;
+
+use lib (split(/:/, $ENV{GITPERLLIB} || "/usr/local/git/lib/perl5/site_perl"));
+use Git;
+
+Git::command_noisy("pull", "origin");
+my @branches = Git::command("branch", "-l");
+map s/[*\s]//g, @branches;
+map {
+    my $branch = $_ eq "master" ? "trunk" : $_;
+    Git::command("update-ref", ("refs/remotes/$_", "refs/remotes/origin/$branch"));
+} @branches;
+
+__END__
+
+=head1 TITLE
+
+git-update - Pull updates from origin and update the remotes references
+
+=head1 SYNOPSIS
+
+git-update
+
+=head1 DESCRIPTION
+
+When using a central git repository which mirrors a subversion one, it isn't feasible to push back into the central git repository -- the commits get messed up because git svn dcommit writes svn metadata into the git commit message, changing the commit and its SHA1.
+
+The solution is to use a circular commit, where each developer commits directly back to subversion using git svn dcommit. For that to work, though, a little behind-the-scenes magic is needed to update the remotes SHA1s that git svn uses to match the latest retrieval from the central git repository.
+
+This script performs that magic.
+
+=head1 AUTHOR
+
+John Ralls, after the instruction fo Thomas Ferris Niclaisen at http://blog.tfnico.com/2010/11/git-svn-mirror-for-multiple-branches.html.
+
+This file is in the public domain.
+
+=cut

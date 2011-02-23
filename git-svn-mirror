@@ -1,0 +1,423 @@
+#!/usr/bin/perl
+#-*-perl-*-
+use strict;
+use lib (split(/:/, $ENV{GITPERLLIB} || "/usr/local/git/lib/perl5/site_perl"));
+
+use Git;
+use Getopt::Long;
+use Pod::Usage;
+use Data::Dumper;
+
+#Command functions
+sub clone;
+sub update;
+
+#Helper functions
+sub init_program;
+sub init;
+sub fetch;
+sub get_branches;
+sub finish_up;
+sub fix_tags;
+sub fix_branches;
+sub fix_trunk;
+sub optimize_repo;
+sub push_repo;
+sub help;
+sub man;
+
+
+BEGIN {
+	# import functions from Git into our packages, en masse
+	no strict 'refs';
+	foreach (qw/command command_oneline command_noisy command_output_pipe
+	            command_input_pipe command_close_pipe
+	            command_bidi_pipe command_close_bidi_pipe config/) {
+		for my $package ( qw(SVN::Git::Editor SVN::Git::Fetcher
+			Git::SVN::Migration Git::SVN::Log Git::SVN),
+			__PACKAGE__) {
+			*{"${package}::$_"} = \&{"Git::$_"};
+		}
+	}
+}
+
+my (@locals, @remote, @tags, %options);
+my $exclude = [];
+$options{verbose} = -1;
+$options{metadata} = 1;
+
+GetOptions(
+    "verbose!" => \$options{verbose},
+    "rootistrunk" => \$options{rootistrunk},
+    "stdlayout" => \$options{stdlayout},
+    "trunk=s" => \$options{trunk},
+    "branches=s" => \$options{branches},
+    "tags=s" => \$options{tags},
+    "exclude=s" => \$options{exclude},
+    "metadata!" => \$options{metadata},
+    "authors=s" => \$options{authors},
+    "prefix=s" => \$options{prefix},
+    "git-repo=s" => \$options{git_repo},
+    "convert" => \$options{convert}
+    ) or die "Option processing failed";
+
+my ($command, $arg2, $dest) = @ARGV;
+my %commands = (
+    clone => \&clone,
+    update => \&update,
+    help => \&help,
+    man => \&man);
+
+grep $command eq $_, keys(%commands) or die "Unrecognized command: $command";
+$options{update} = undef;
+
+my $trunk_name = $options{trunk} ? $options{trunk} : "trunk";
+$trunk_name = $options{prefix} . $trunk_name if $options{prefix};
+print "Trunk is $trunk_name\n" if $options{verbose};
+
+init_program($dest);
+
+@{$exclude} = split ":", $options{exclude} if $options{exclude};
+if ($options{verbose} == 1) {
+    print "Args: Command = $command, Arg2 = $arg2, Destination = $dest\n";
+    print Data::Dumper->Dump([\%options, $exclude], ["Options", "Excludes"]);
+}
+&{$commands{$command}};
+
+
+sub clone {
+    $options{prefix} = "svn/" unless $options{prefix};
+    init($arg2);
+    fetch($exclude);
+    finish_up;
+}
+
+sub update {
+    $options{prefix} = config("svn2git.prefix") unless $options{prefix};
+    $options{prefix} = "svn/" unless $options{prefix};
+    $options{update} = "fetch";
+    fetch;
+    finish_up;
+}
+sub finish_up {
+    get_branches;
+    fix_tags;
+    if ($options{convert}) {
+	fix_branches;
+	fix_trunk;
+    }
+    optimize_repo;
+    push_repo;
+}
+
+sub init_program {
+    my ($dest) = @_;
+    $dest = '.' unless $dest;
+    my $verb = $options{update} ? ucfirst $options{update} : "Make";
+    print "$verb Git Repository at $dest\n" if $options{verbose} == 1;
+#    $repo = Git::repository($dest);
+#    command_noisy("init", $dest);
+    die "$dest exists but isn't a directory" if -e $dest && ! -d $dest;
+    mkdir $dest unless -e $dest;
+    chdir($dest);
+}
+
+sub init {
+    my ($url) = @_;
+    my @args = ("init");
+    my $pfx_enabled = 0;
+    if ($options{rootistrunk}) {
+	push @args, "--trunk=$url" ;
+    }
+    else {
+	push @args, ("--trunk=$options{trunk}") if $options{trunk};
+	push @args, ("--branches=$options{branches}") if $options{branches};
+	push @args, ("--tags=$options{tags}") if $options{tags};
+    }
+    push @args, "--stdlayout" if $options{stdlayout};
+    push @args, ("--no-metadata") unless $options{metadata};
+    if ($options{prefix} && ($options{branches} || $options{stdlayout})) {
+	push @args, "--prefix=$options{prefix}";
+	$pfx_enabled = 1;
+    }
+    push @args, $url;
+    print "Command: git svn ", join(" ", @args), "\n";
+    command_noisy("svn", @args);
+    command_oneline("config", ("--add", "svn2git.prefix", $options{prefix}))
+	if $pfx_enabled;
+    command_noisy("config", ("svn.authorsfile", $options{authors}))
+	if ($options{authors});
+    if ($options{git_repo}) {
+	command_noisy("remote", ("add", "origin", $options{git_repo}));
+	command("config", ("branch.origin.fetch", "+refs/remotes/$options{prefix}*:refs/remotes/origin/*"));
+	command("config", ("branch.origin.push", "refs/remotes/$options{prefix}*:refs/heads/*"));
+    }
+}
+
+sub fetch {
+    my ($exclude) = @_;
+    my $regex;
+    my @args = ("fetch");
+    $regex .= "(?:" . join "|", @{$exclude} . ")"
+	if ($exclude && scalar @{$exclude});
+
+    unless ($options{rootistrunk} ) {
+	my @regex;
+	push @regex, "$options{trunk}\/" if $options{trunk};
+	push @regex, "$options{branches}\/[^/]+\/" if $options{branches};
+	push @regex, "$options{tags}\/[^/]+\/" if $options{tags};
+	$regex .= "(?:" . join( "|", @regex) . ")" if scalar @regex;
+    }
+    push @args, "--ignore-paths='$regex'" if $regex;
+    push @args, "--quiet" if $options{verbose} == 0;
+    print "Running git svn ", join(", ", @args), "\n";
+    my @result = command("svn", @args);
+    print join("\n", grep(/^[^\s]+/, @result)), "\n" if $options{verbose} == 1;
+}
+
+sub get_branches {
+# Get the list of local and remote branches, taking care to ignore
+# console color codes and ignoring the '*' character used to indicate
+# the currently selected branch.
+    my $tagre = $options{prefix} ? "^$options{prefix}" . "tags\/" : "^tags\/";
+    @locals = command("branch", ("-l", "--no-color"));
+    map s/[*\s]//g, @locals;
+    @remote = command("branch", ("-r", "--no-color"));
+    map s/[*\s]//g, @remote;
+    @tags = grep /$tagre/, @remote;
+    print "\n", Data::Dumper->Dump([\@locals, \@remote, \@tags],
+			     ["Local Branches", "Remote Branches", "Tags"])
+	if $options{verbose} == 1;
+}
+
+sub fix_tags {
+    foreach my $tag (@tags) {
+	my $tagre = $options{prefix} ? "^$options{prefix}" . "tags\/(.*)" :
+	    "^tags\/(.*)";
+	$tag =~ s/\s//g;
+	$tag =~ /$tagre/;
+	my $id = escape_quotes($1) if $1;
+	my $subject = command("log", ("-l", "--pretty=format:'%s'", $tag));
+	my $date = command("log", ("-i", "--pretty=format: %ci", $tag));
+	$subject = escape_quotes($subject);
+	$date = escape_quotes($date);
+	my $save_date = $ENV{GIT_COMMITTER_DATE};
+	$ENV{GIT_COMMITTER_DATE} = $date;
+	command_noisy ("tag", ("-a", "-m", $subject, $id, escape_quotes($tag)));
+	$ENV{GIT_COMMITTER_DATE} = $save_date;
+	command_noisy("branch", ("-d", "-r", $tag));
+    }
+}
+
+sub fix_branches {
+    my @svn_branches = grep {
+	my $branch = $_;
+	grep (($branch =~ /$_/), @tags) == 0; } @remote;
+     foreach my $branch (@svn_branches) {
+	$branch =~ s/\s//g;
+	my $branch_name;
+	if ($options{prefix} && $branch =~ /$options{prefix}(.*)/ ) {
+	    $branch_name = $1;
+	}
+	else {
+	    $branch_name = $branch;
+	}
+	print "Branch $branch, truncated to $branch_name\n"
+	    if $options{verbose} == 1;
+	if ($options{update} && ( $branch eq $trunk_name ||
+				    grep $_ eq $branch_name, @locals)) {
+	    next if config("$branch_name.closed");
+	    command_noisy("checkout", ("-f", $branch_name));
+	    command_noisy("svn", ($options{update}));
+	    next;
+	}
+	next if ($branch_name eq $trunk_name);
+	next if $branch !~ /^$options{prefix}/;
+	command_noisy("branch", ("-t", $branch_name, "remotes/$branch"));
+	command_noisy("checkout", $branch_name);
+    }
+}
+
+sub fix_trunk {
+    my @trunk = grep /$trunk_name/, @remote;
+    print "\n", Data::Dumper->Dump([@trunk], ["Trunks"])
+	if $options{verbose} == 1;
+    die "More than one trunk" if @trunk > 1;
+    unless (@trunk) {
+	warn "No trunk";
+	return;
+    }
+    if (! $options{"rebase"} ) {
+	command_noisy("checkout", ($trunk[0]));
+	command_noisy( "branch", ("-D", "master"));
+	command_noisy("checkout", ("-f", "-b", "master"));
+	$ENV["GIT_SVN_ID"] = $trunk[0];
+	command_noisy("svn", ("show-ignore"));
+
+    }
+    else {
+	command_noisy("checkout", ("-f", "master"));
+    }
+}
+
+sub optimize_repo {
+    command_noisy("gc");
+}
+
+sub push_repo {
+    die "No origin remote" unless grep /^origin$/, command("remote");
+    command("push", ("--all", "origin"));
+    command("push", ("--tags", "origin"));
+}
+
+
+sub escape_quotes {
+    my ($str) = @_;
+    $str =~ s:':'\\\\'':g;
+    return $str;
+}
+
+sub help {
+    pod2usage(1);
+    exit;
+}
+
+sub man {
+    pod2usage(-exitstatus => 0, -verbose => 2);
+    exit;
+}
+
+__END__
+
+=head1 NAME
+
+B<git-svn-mirror> - Easily set up and maintain a mirror of a Subversion repository
+
+=head1 SYNOPSIS
+
+=over 4
+
+=item git-svn-mirror clone [options] URL [destination]
+
+=item git-svn-mirror update [options] [directory]
+
+=item git-svn-mirror help
+
+=item git-svn-mirror man
+
+=back
+
+=head1 OPTIONS
+
+=over 8
+
+=item B<--stdlayout>: Repository has a standard layout
+
+=item B<--branches=path>: Path, relative to repo, of svn branches
+
+=item B<--tags=path>: Path, relative to repo, of svn tags
+
+=item B<--trunk=path>: Path, relative to repo, of svn trunk
+
+=item B<--rootistrunk>: Trunkless, branchless repository
+
+=item B<--exclude>: Regular expressions of directories to exclude from fetch
+
+=item B<--prefix>: Insert a prefix directory into remote refs
+
+=item B<--metadata>: Include svn metadata in git commit messages
+
+=item B<--authors>: path to an authors file
+
+=item B<--git-repo>: URL of Bare git repository to push to.
+
+=item B<--convert>: Create refs/heads tracking branches
+
+=item B<--(no)verbose>: Output more (less) progress information
+
+=back
+
+=head1 COMMANDS
+
+=over 8
+
+=item B<clone> Prepare a new directory
+
+=item B<update>: Fetch changes from the subversion repository, clean up tag branches, and if so configured push changes to the git bare repository.
+
+=item B<help>: Display option and command summary
+
+=item B<man>: Display the manual page.
+
+=back
+
+=head1 DESCRIPTION
+
+There's a fair amount of work involved in setting up and maintaining a git mirror of a subversion repository, especially if both repositories are to continue in parallel use. git-svn-mirror simplifies the process.
+
+One of the biggest bumps is that subversion tags are a special form of branch, while git tags (even annotated ones) are references to a single commit. Left to itself, git svn copies all of the tags into branches. Since most projects have many more tags than branches, this can make a bit of a mess. git-svn-mirror creates proper annotated tags out of svn branches and deletes the extra branches.
+
+=head1 DETAILS
+
+There are two operating commands: If you're starting a new repository mirror, use clone; after that, use update -- even if you're restarting because something went wrong during the fetch phase of clone.
+
+B<Options>:
+
+B<--stdlayout>: Repository has a standard layout, with subdirectories named trunk, branches, and tags
+
+B<--branches=path>: Path, relative to repo, of svn branches
+
+B<--tags=path>: Path, relative to repo, of svn tags
+
+B<--trunk=path>: Path, relative to repo, of svn trunk
+
+B<--rootistrunk>: The subversion repository has no tags or branches, and the url supplied is the trunk (i.e., there is no "trunk" directory appended to the url). This is the default, and the resulting remote branch will be called "git-svn".
+
+B<--exclude>: Perl regular expressions, separated by ':', with which to filter paths when fetching. See git-svn(1) for details.
+
+B<--prefix>: Insert a prefix directory into remote refs (e.g., refs/remotes/svn/trunk instead of refs/remotes/trunk). This can be helpful for disambiguating branches in checkout commands, particularly if you're setting up a git remote to push to. Default is "svn/". If you want no prefix, pass --prefix="".
+
+B<--nometadata>: Don't include svn metadata in git commit messages. This is in general a bad idea unless you are doing a one-time conversion of a subversion repository and want no way to link git changesets to the old subversion revisions. It is likely to break committing back into subversion from a central git mirror.
+
+B<--authors>: path to an authors file. See git-svn(1) for details.
+
+B<--git-repo>: URL of Bare git repository to push to. Must be initialized ahead of time. This command configures the push and fetch parameters to operate on refs/remotes/$prefix instead of refs/heads, which ensures that the svn references are available in the bare repository; this is needed for git svn dcommit to work.
+
+B<--convert>: Create refs/heads branches which track the branches in refs/remotes/prefix, and ensure that tags are visible in the local checkout. This is probably not a good idea if you're going to push to a bare repository; it's better to clone the bare repository yourself, which will have the same effect in your working directory and help to ensure that the references in the bare repository don't get messed up.
+
+
+=head1 AUTHOR
+
+This was originally lifted from Kevin Menard's fork of James Coglan's
+Ruby Gem svn2git (http://github.com/nirvdrum/svn2git) and translated
+into Perl5 by John Ralls. But the original code wasn't quite right for
+creating and maintaining a Github repository that mirrors a Subversion
+one in which several developers use each, so John Ralls (the present
+author) has reworked it rather extensively. The sharing set up is due to Thomas Feris Niclaison's blog articles, the most salient of which is http://blog.tfnico.com/2010/11/git-svn-mirror-for-multiple-branches.html.
+
+=head1 LICENCE and COPYRIGHT
+
+Copyright (c) 2008 James Coglan, Kevin Menard
+Copyright 2011 John Ralls, Fremont, Californa
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+
+
+=cut
