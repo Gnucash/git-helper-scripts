@@ -1,4 +1,4 @@
-Perl scripts for setting up and using a git mirror. See [Git](http://wiki.gnucash.org/Git) in the Gnucash Wiki and the embedded documentation for more information.
+Perl scripts for setting up and using a git mirror. See [Git](http://wiki.gnucash.org/wiki/Git) in the Gnucash Wiki and the embedded documentation for more information.
 
 * git-svn-mirror: Set up and maintain a git mirror of a Subversion repository
 
