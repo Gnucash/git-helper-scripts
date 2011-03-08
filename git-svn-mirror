@@ -68,7 +68,7 @@ my %commands = (
     help => \&help,
     man => \&man);
 
-grep $command eq $_, keys(%commands) or die "Unrecognized command: $command";
+grep $command eq $_, keys(%commands) or help;
 $options{update} = undef;
 
 my $trunk_name = $options{trunk} ? $options{trunk} : "trunk";
