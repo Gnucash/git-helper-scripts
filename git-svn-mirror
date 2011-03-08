@@ -191,9 +191,9 @@ sub get_branches {
 }
 
 sub fix_tags {
+    my $tagre = $options{prefix} ? qr/^$options{prefix}"tags\/(.*)/ :
+	qr/^tags\/(.*)/;
     foreach my $tag (@tags) {
-	my $tagre = $options{prefix} ? "^$options{prefix}" . "tags\/(.*)" :
-	    "^tags\/(.*)";
 	$tag =~ s/\s//g;
 	$tag =~ /$tagre/;
 	my $subject = command("log", ("-l", "--pretty=format:'%s'", $tag));
