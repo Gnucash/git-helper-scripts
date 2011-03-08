@@ -75,8 +75,6 @@ my $trunk_name = $options{trunk} ? $options{trunk} : "trunk";
 $trunk_name = $options{prefix} . $trunk_name if $options{prefix};
 print "Trunk is $trunk_name\n" if $options{verbose};
 
-init_program($dest);
-
 @{$exclude} = split ":", $options{exclude} if $options{exclude};
 if ($options{verbose} == 1) {
     print "Args: Command = $command, Arg2 = $arg2, Destination = $dest\n";
@@ -86,6 +84,7 @@ if ($options{verbose} == 1) {
 
 
 sub clone {
+	init_program($dest);
     $options{prefix} = "svn/" unless $options{prefix};
     init($arg2);
     fetch($exclude);
@@ -93,6 +92,7 @@ sub clone {
 }
 
 sub update {
+	init_program( $dest ? $dest : $arg2 ) if $dest || $arg2 && -d $arg2;
     $options{prefix} = config("svn2git.prefix") unless $options{prefix};
     $options{prefix} = "svn/" unless $options{prefix};
     $options{update} = "fetch";
