@@ -103,8 +103,8 @@ sub finish_up {
     get_branches;
     fix_tags;
     if ($options{convert}) {
-	fix_branches;
-	fix_trunk;
+		fix_branches;
+		fix_trunk;
     }
     optimize_repo;
     push_repo;
