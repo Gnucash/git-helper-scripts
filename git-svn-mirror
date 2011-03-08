@@ -264,7 +264,7 @@ sub optimize_repo {
 
 sub push_repo {
     die "No origin remote" unless grep /^origin$/, command("remote");
-    command("push", ("--all", "origin"));
+    command("push", ("origin"));
     command("push", ("--tags", "origin"));
 }
 
