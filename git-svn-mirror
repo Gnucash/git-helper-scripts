@@ -149,8 +149,8 @@ sub init {
 	if ($options{authors});
     if ($options{git_repo}) {
 	command_noisy("remote", ("add", "origin", $options{git_repo}));
-	command("config", ("branch.origin.fetch", "+refs/remotes/$options{prefix}*:refs/remotes/origin/*"));
-	command("config", ("branch.origin.push", "refs/remotes/$options{prefix}*:refs/heads/*"));
+	command("config", ("remote.origin.fetch", "+refs/remotes/$options{prefix}*:refs/remotes/origin/*"));
+	command("config", ("remote.origin.push", "refs/remotes/$options{prefix}*:refs/heads/*"));
     }
 }
 
