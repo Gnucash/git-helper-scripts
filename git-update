@@ -6,12 +6,10 @@ use lib (split(/:/, $ENV{GITPERLLIB} || "/usr/local/git/lib/perl5/site_perl"));
 use Git;
 
 Git::command_noisy("pull", "origin");
-my @branches = Git::command("branch", "-l");
+my @branches = Git::command("branch", "-r");
 map s/[*\s]//g, @branches;
-map {
-    my $branch = $_ eq "master" ? "trunk" : $_;
-    Git::command("update-ref", ("refs/remotes/$_", "refs/remotes/origin/$branch"));
-} @branches;
+@branches = map { /^origin\/([^\s>]+)$/ ? $1 : () } @branches;
+map { Git::command("update-ref", ("refs/remotes/$_", "refs/remotes/origin/$_")); } @branches;
 
 __END__
 
