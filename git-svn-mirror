@@ -196,12 +196,13 @@ sub fix_tags {
     foreach my $tag (@tags) {
 	$tag =~ s/\s//g;
 	$tag =~ /$tagre/;
+	my $id = $1 ? $1 : $tag;
 	my $subject = command("log", ("-l", "--pretty=format:'%s'", $tag));
 	my $date = command("log", ("-i", "--pretty=format: %ci", $tag));
 	my $save_date = $ENV{GIT_COMMITTER_DATE};
 	$ENV{GIT_COMMITTER_DATE} = $date;
 	print "git tag -a -m $subject $id $tag\n" if $options{verbose};
-	`git tag -a -m $subject $id, $tag`;
+	`git tag -a -m $subject $id $tag`;
 	$ENV{GIT_COMMITTER_DATE} = $save_date;
 	command_noisy("branch", ("-d", "-r", $tag));
     }
