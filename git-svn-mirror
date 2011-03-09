@@ -35,7 +35,7 @@ BEGIN {
 	            command_bidi_pipe command_close_bidi_pipe config/) {
 		for my $package ( qw(SVN::Git::Editor SVN::Git::Fetcher
 			Git::SVN::Migration Git::SVN::Log Git::SVN),
-			__PACKAGE__) {
+						  __PACKAGE__) {
 			*{"${package}::$_"} = \&{"Git::$_"};
 		}
 	}
@@ -127,30 +127,30 @@ sub init {
     my @args = ("init");
     my $pfx_enabled = 0;
     if ($options{rootistrunk}) {
-	push @args, "--trunk=$url" ;
+		push @args, "--trunk=$url" ;
     }
     else {
-	push @args, ("--trunk=$options{trunk}") if $options{trunk};
-	push @args, ("--branches=$options{branches}") if $options{branches};
-	push @args, ("--tags=$options{tags}") if $options{tags};
+		push @args, ("--trunk=$options{trunk}") if $options{trunk};
+		push @args, ("--branches=$options{branches}") if $options{branches};
+		push @args, ("--tags=$options{tags}") if $options{tags};
     }
     push @args, "--stdlayout" if $options{stdlayout};
     push @args, ("--no-metadata") unless $options{metadata};
     if ($options{prefix} && ($options{branches} || $options{stdlayout})) {
-	push @args, "--prefix=$options{prefix}";
-	$pfx_enabled = 1;
+		push @args, "--prefix=$options{prefix}";
+		$pfx_enabled = 1;
     }
     push @args, $url;
     print "Command: git svn ", join(" ", @args), "\n";
     command_noisy("svn", @args);
     command_oneline("config", ("--add", "svn2git.prefix", $options{prefix}))
-	if $pfx_enabled;
+		if $pfx_enabled;
     command_noisy("config", ("svn.authorsfile", $options{authors}))
-	if ($options{authors});
+		if ($options{authors});
     if ($options{git_repo}) {
-	command_noisy("remote", ("add", "origin", $options{git_repo}));
-	command("config", ("remote.origin.fetch", "+refs/remotes/$options{prefix}*:refs/remotes/origin/*"));
-	command("config", ("remote.origin.push", "refs/remotes/$options{prefix}*:refs/heads/*"));
+		command_noisy("remote", ("add", "origin", $options{git_repo}));
+		command("config", ("remote.origin.fetch", "+refs/remotes/$options{prefix}*:refs/remotes/origin/*"));
+		command("config", ("remote.origin.push", "refs/remotes/$options{prefix}*:refs/heads/*"));
     }
 }
 
@@ -159,14 +159,14 @@ sub fetch {
     my $regex;
     my @args = ("fetch");
     $regex .= "(?:" . join "|", @{$exclude} . ")"
-	if ($exclude && scalar @{$exclude});
+		if ($exclude && scalar @{$exclude});
 
     unless ($options{rootistrunk} ) {
-	my @regex;
-	push @regex, "$options{trunk}\/" if $options{trunk};
-	push @regex, "$options{branches}\/[^/]+\/" if $options{branches};
-	push @regex, "$options{tags}\/[^/]+\/" if $options{tags};
-	$regex .= "(?:" . join( "|", @regex) . ")" if scalar @regex;
+		my @regex;
+		push @regex, "$options{trunk}\/" if $options{trunk};
+		push @regex, "$options{branches}\/[^/]+\/" if $options{branches};
+		push @regex, "$options{tags}\/[^/]+\/" if $options{tags};
+		$regex .= "(?:" . join( "|", @regex) . ")" if scalar @regex;
     }
     push @args, "--ignore-paths='$regex'" if $regex;
     push @args, "--quiet" if $options{verbose} == 0;
@@ -186,76 +186,76 @@ sub get_branches {
     map s/[*\s]//g, @remote;
     @tags = grep /$tagre/, @remote;
     print "\n", Data::Dumper->Dump([\@locals, \@remote, \@tags],
-			     ["Local Branches", "Remote Branches", "Tags"])
-	if $options{verbose} == 1;
+								   ["Local Branches", "Remote Branches", "Tags"])
+		if $options{verbose} == 1;
 }
 
 sub fix_tags {
     my $tagre = $options{prefix} ? qr/^$options{prefix}"tags\/(.*)/ :
-	qr/^tags\/(.*)/;
+		qr/^tags\/(.*)/;
     foreach my $tag (@tags) {
-	$tag =~ s/\s//g;
-	$tag =~ /$tagre/;
-	my $id = $1 ? $1 : $tag;
-	my $subject = command("log", ("-l", "--pretty=format:'%s'", $tag));
-	my $date = command("log", ("-i", "--pretty=format: %ci", $tag));
-	my $save_date = $ENV{GIT_COMMITTER_DATE};
-	$ENV{GIT_COMMITTER_DATE} = $date;
-	print "git tag -a -m $subject $id $tag\n" if $options{verbose} == 1;
-	`git tag -a -m $subject $id $tag`;
-	$ENV{GIT_COMMITTER_DATE} = $save_date;
-	command_noisy("branch", ("-d", "-r", $tag));
+		$tag =~ s/\s//g;
+		$tag =~ /$tagre/;
+		my $id = $1 ? $1 : $tag;
+		my $subject = command("log", ("-l", "--pretty=format:'%s'", $tag));
+		my $date = command("log", ("-i", "--pretty=format: %ci", $tag));
+		my $save_date = $ENV{GIT_COMMITTER_DATE};
+		$ENV{GIT_COMMITTER_DATE} = $date;
+		print "git tag -a -m $subject $id $tag\n" if $options{verbose} == 1;
+		`git tag -a -m $subject $id $tag`;
+		$ENV{GIT_COMMITTER_DATE} = $save_date;
+		command_noisy("branch", ("-d", "-r", $tag));
     }
 }
 
 sub fix_branches {
     my @svn_branches = grep {
-	my $branch = $_;
-	grep (($branch =~ /$_/), @tags) == 0; } @remote;
-     foreach my $branch (@svn_branches) {
-	$branch =~ s/\s//g;
-	my $branch_name;
-	if ($options{prefix} && $branch =~ /$options{prefix}(.*)/ ) {
-	    $branch_name = $1;
-	}
-	else {
-	    $branch_name = $branch;
-	}
-	print "Branch $branch, truncated to $branch_name\n"
-	    if $options{verbose} == 1;
-	if ($options{update} && ( $branch eq $trunk_name ||
-				    grep $_ eq $branch_name, @locals)) {
-	    next if config("$branch_name.closed");
-	    command_noisy("checkout", ("-f", $branch_name));
-	    command_noisy("svn", ($options{update}));
-	    next;
-	}
-	next if ($branch_name eq $trunk_name);
-	next if $branch !~ /^$options{prefix}/;
-	command_noisy("branch", ("-t", $branch_name, "remotes/$branch"));
-	command_noisy("checkout", $branch_name);
+		my $branch = $_;
+		grep (($branch =~ /$_/), @tags) == 0; } @remote;
+	foreach my $branch (@svn_branches) {
+		$branch =~ s/\s//g;
+		my $branch_name;
+		if ($options{prefix} && $branch =~ /$options{prefix}(.*)/ ) {
+			$branch_name = $1;
+		}
+		else {
+			$branch_name = $branch;
+		}
+		print "Branch $branch, truncated to $branch_name\n"
+			if $options{verbose} == 1;
+		if ($options{update} && ( $branch eq $trunk_name ||
+								  grep $_ eq $branch_name, @locals)) {
+			next if config("$branch_name.closed");
+			command_noisy("checkout", ("-f", $branch_name));
+			command_noisy("svn", ($options{update}));
+			next;
+		}
+		next if ($branch_name eq $trunk_name);
+		next if $branch !~ /^$options{prefix}/;
+		command_noisy("branch", ("-t", $branch_name, "remotes/$branch"));
+		command_noisy("checkout", $branch_name);
     }
 }
 
 sub fix_trunk {
     my @trunk = grep /$trunk_name/, @remote;
     print "\n", Data::Dumper->Dump([@trunk], ["Trunks"])
-	if $options{verbose} == 1;
+		if $options{verbose} == 1;
     die "More than one trunk" if @trunk > 1;
     unless (@trunk) {
-	warn "No trunk";
-	return;
+		warn "No trunk";
+		return;
     }
     if (! $options{"rebase"} ) {
-	command_noisy("checkout", ($trunk[0]));
-	command_noisy( "branch", ("-D", "master"));
-	command_noisy("checkout", ("-f", "-b", "master"));
-	$ENV["GIT_SVN_ID"] = $trunk[0];
-	command_noisy("svn", ("show-ignore"));
+		command_noisy("checkout", ($trunk[0]));
+		command_noisy( "branch", ("-D", "master"));
+		command_noisy("checkout", ("-f", "-b", "master"));
+		$ENV["GIT_SVN_ID"] = $trunk[0];
+		command_noisy("svn", ("show-ignore"));
 
     }
     else {
-	command_noisy("checkout", ("-f", "master"));
+		command_noisy("checkout", ("-f", "master"));
     }
 }
 
