@@ -73,7 +73,7 @@ $options{update} = undef;
 
 my $trunk_name = $options{trunk} ? $options{trunk} : "trunk";
 $trunk_name = $options{prefix} . $trunk_name if $options{prefix};
-print "Trunk is $trunk_name\n" if $options{verbose};
+print "Trunk is $trunk_name\n" if $options{verbose} == 1;
 
 @{$exclude} = split ":", $options{exclude} if $options{exclude};
 if ($options{verbose} == 1) {
@@ -201,7 +201,7 @@ sub fix_tags {
 	my $date = command("log", ("-i", "--pretty=format: %ci", $tag));
 	my $save_date = $ENV{GIT_COMMITTER_DATE};
 	$ENV{GIT_COMMITTER_DATE} = $date;
-	print "git tag -a -m $subject $id $tag\n" if $options{verbose};
+	print "git tag -a -m $subject $id $tag\n" if $options{verbose} == 1;
 	`git tag -a -m $subject $id $tag`;
 	$ENV{GIT_COMMITTER_DATE} = $save_date;
 	command_noisy("branch", ("-d", "-r", $tag));
