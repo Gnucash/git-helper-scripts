@@ -5,7 +5,7 @@ use strict;
 use lib (split(/:/, $ENV{GITPERLLIB} || "/usr/local/git/lib/perl5/site_perl"));
 use Git;
 
-Git::command_noisy("pull", "origin");
+Git::command_noisy("pull", ("--rebase", "origin", @ARGV));
 my @branches = Git::command("branch", "-r");
 map s/[*\s]//g, @branches;
 @branches = map { /^origin\/([^\s>]+)$/ ? $1 : () } @branches;
