@@ -179,7 +179,7 @@ sub get_branches {
 # Get the list of local and remote branches, taking care to ignore
 # console color codes and ignoring the '*' character used to indicate
 # the currently selected branch.
-    my $tagre = $options{prefix} ? "^$options{prefix}" . "tags\/" : "^tags\/";
+     my $tagre = $options{prefix} ? "^$options{prefix}" . "tags\/" : "^tags\/";
     @locals = command("branch", ("-l", "--no-color"));
     map s/[*\s]//g, @locals;
     @remote = command("branch", ("-r", "--no-color"));
@@ -191,18 +191,19 @@ sub get_branches {
 }
 
 sub fix_tags {
-    my $tagre = $options{prefix} ? qr/^$options{prefix}"tags\/(.*)/ :
-		qr/^tags\/(.*)/;
+    my $tagre = $options{prefix} ? qr/^$options{prefix}tags\/(.*)/ :
+		qr/tags\/(.*)/;
+	print "Tag Regex $tagre\n";
     foreach my $tag (@tags) {
 		$tag =~ s/\s//g;
 		$tag =~ /$tagre/;
 		my $id = $1 ? $1 : $tag;
-		my $subject = command("log", ("-l", "--pretty=format:'%s'", $tag));
-		my $date = command("log", ("-i", "--pretty=format: %ci", $tag));
+		my $subject = command("log", ("-1", "--pretty=format:'%s'", $tag));
+		my $date = command("log", ("-1", "--pretty=format: %ci", $tag));
 		my $save_date = $ENV{GIT_COMMITTER_DATE};
 		$ENV{GIT_COMMITTER_DATE} = $date;
-		print "git tag -a -m $subject $id $tag\n" if $options{verbose} == 1;
-		`git tag -a -m $subject $id $tag`;
+		print "git tag -f -a -m $subject $id $tag\n" if $options{verbose} == 1;
+		command_noisy("tag", ("-f", "-a",  "-m", $subject, $id, $tag));
 		$ENV{GIT_COMMITTER_DATE} = $save_date;
 		command_noisy("branch", ("-d", "-r", $tag));
     }
