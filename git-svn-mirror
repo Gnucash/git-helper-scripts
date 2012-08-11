@@ -193,7 +193,6 @@ sub get_branches {
 sub fix_tags {
     my $tagre = $options{prefix} ? qr/^$options{prefix}tags\/(.*)/ :
 		qr/tags\/(.*)/;
-	print "Tag Regex $tagre\n";
     foreach my $tag (@tags) {
 		$tag =~ s/\s//g;
 		$tag =~ /$tagre/;
