@@ -43,6 +43,8 @@ BEGIN {
 
 my (@locals, @remote, @tags, %options);
 my $exclude = [];
+my $branchdirs = [];
+my $tagdirs = [];
 $options{verbose} = -1;
 $options{metadata} = 1;
 
@@ -76,6 +78,9 @@ $trunk_name = $options{prefix} . $trunk_name if $options{prefix};
 print "Trunk is $trunk_name\n" if $options{verbose} == 1;
 
 @{$exclude} = split ":", $options{exclude} if $options{exclude};
+@{$branchdirs} = split ":", $options{branches} if $options{branches};
+@{$tagdirs} = split ":", $options{tags} if $options{tags};
+
 if ($options{verbose} == 1) {
     print "Args: Command = $command, Arg2 = $arg2, Destination = $dest\n";
     print Data::Dumper->Dump([\%options, $exclude], ["Options", "Excludes"]);
@@ -84,7 +89,7 @@ if ($options{verbose} == 1) {
 
 
 sub clone {
-	init_program($dest);
+    init_program($dest);
     $options{prefix} = "svn/" unless $options{prefix};
     init($arg2);
     fetch($exclude);
@@ -131,8 +136,8 @@ sub init {
     }
     else {
 		push @args, ("--trunk=$options{trunk}") if $options{trunk};
-		push @args, ("--branches=$options{branches}") if $options{branches};
-		push @args, ("--tags=$options{tags}") if $options{tags};
+		push @args, map("--branches=$_", @$branchdirs);
+		push @args, map("--tags=$_", @$tagdirs);
     }
     push @args, "--stdlayout" if $options{stdlayout};
     push @args, ("--no-metadata") unless $options{metadata};
@@ -307,9 +312,9 @@ B<git-svn-mirror> - Easily set up and maintain a mirror of a
 =item B<--stdlayout>: Repository has a standard layout, with
     subdirectories named trunk, branches, and tags
 
-=item B<--branches=path>: Path, relative to repo, of svn branches
+=item B<--branches=path>: Colon-separated list of paths, relative to repo, of subdirectories containing svn branches
 
-=item B<--tags=path>: Path, relative to repo, of svn tags
+=item B<--tags=path>: Colon-separated list of paths, relative to repo, of subdirectories containing svn tags
 
 =item B<--trunk=path>: Path, relative to repo, of svn trunk
 
